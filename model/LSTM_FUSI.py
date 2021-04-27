@@ -9,7 +9,7 @@ class LSTM_FUSI(nn.Module):
 
     def __init__(self, vocab_size, author_size, num_year, n_dense_features, batch_size, weights=None,
                  embedding_dim=300, n_hidden=300, n_out=1, num_layers=1, bidirectional=True,
-                 author_embed_dim=100, time_embed_dim=5):
+                 author_embed_dim=10, time_embed_dim=10):
         super(LSTM_FUSI, self).__init__()
 
         # LSTM_FUSI parameters
