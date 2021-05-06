@@ -9,7 +9,7 @@ class LSTM_FUSI(nn.Module):
 
     def __init__(self, vocab_size, author_size, num_year, n_dense_features, batch_size, weights=None,
                  embedding_dim=300, n_hidden=300, n_out=1, num_layers=1, bidirectional=True,
-                 author_embed_dim=10, time_embed_dim=10):
+                 author_embed_dim=20, time_embed_dim=20):
         super(LSTM_FUSI, self).__init__()
 
         # LSTM_FUSI parameters
@@ -50,7 +50,7 @@ class LSTM_FUSI(nn.Module):
         self.lstm = nn.LSTM(self.embedding_dim, self.n_hidden, self.num_layers, bidirectional=self.bidirectional)
 
         # Fully connect layer
-        self.all_dim = self.n_hidden + 2 * self.num_directions * self.n_hidden + self.n_dense_features\
+        self.all_dim = 2 * self.n_hidden + 2 * self.num_directions * self.n_hidden + self.n_dense_features\
                        + self.author_embed_dim + 7*self.time_embed_dim
 
         self.fc = torch.nn.Sequential(
@@ -103,7 +103,10 @@ class LSTM_FUSI(nn.Module):
         # lstm_out, lengths = pad_packed_sequence(lstm_out)
         avg_pool = F.adaptive_avg_pool1d(lstm_output.permute(1, 2, 0), 1).view(batch_size, -1)
         max_pool = F.adaptive_max_pool1d(lstm_output.permute(1, 2, 0), 1).view(batch_size, -1)
-        sentence_output = torch.cat([c[-1], avg_pool, max_pool], dim=1)  # (batch_size, 3*num_directions*n_hidden)
+
+        #attn_output = self.attention_net(lstm_output.permute(1, 0, 2), h)   # output.size() = (batch_size, num_seq, hidden_size)
+        #print(attn_output.shape)
+        sentence_output = torch.cat([c[-1], c[-2], avg_pool, max_pool], dim=1)  # (batch_size, 3*num_directions*n_hidden)
 
         # additional feature embedding and stack
         feature_embs = [
@@ -136,3 +139,40 @@ class LSTM_FUSI(nn.Module):
         if type(m) == nn.Linear:
             torch.nn.init.xavier_uniform_(m.weight)
             m.bias.data.fill_(0.01)
+
+    def attention_net(self, lstm_output, final_state):
+
+        """
+        use attention to compute soft alignment score corresponding
+        between each of the hidden_state and the last hidden_state of the LSTM.
+
+        Arguments
+        ---------
+
+        lstm_output : Final output of the LSTM which contains hidden layer outputs for each sequence.
+        final_state : Final time-step hidden state (h_n) of the LSTM
+
+        ---------
+
+        Returns : It performs attention mechanism by first computing weights for each of the sequence present in lstm_output and and then finally computing the
+                  new hidden state.
+
+        Tensor Size :
+                    hidden.size() = (batch_size, hidden_size)
+                    attn_weights.size() = (batch_size, num_seq)
+                    soft_attn_weights.size() = (batch_size, num_seq)
+                    new_hidden_state.size() = (batch_size, hidden_size)
+
+        """
+        # final state => (num_direction*layers, batch size, hidden_size)
+        # permuted lstm ouput => (batch size, seq_len, num_direction*hidden size)
+        hidden = final_state.squeeze(0)
+        print(final_state.shape)
+        print(hidden.shape)
+        print(hidden.unsqueeze(2).shape)
+        print(lstm_output.shape)
+        attn_weights = torch.bmm(lstm_output, hidden.unsqueeze(2)).squeeze(2)
+        soft_attn_weights = F.softmax(attn_weights, 1)
+        new_hidden_state = torch.bmm(lstm_output.transpose(1, 2), soft_attn_weights.unsqueeze(2)).squeeze(2)
+
+        return new_hidden_state
